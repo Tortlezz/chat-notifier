@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "chat_notifier",
+  "version": "${version}",
+  "name": "Chat Notifier",
+  "description": "Shows a Windows notification when a configured Minecraft chat message appears.",
+  "authors": [
+    "Tortlezz"
+  ],
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "com.example.chatnotifier.ChatNotifierClient"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=${loader_version}",
+    "minecraft": "${minecraft_version_range}",
+    "fabric-api": "*",
+    "fabric-language-kotlin": ">=1.14.0"
+  }
+}
