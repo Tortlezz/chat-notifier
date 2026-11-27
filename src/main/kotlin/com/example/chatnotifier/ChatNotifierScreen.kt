@@ -11,12 +11,13 @@ class ChatNotifierScreen(
     private val parent: Screen?,
     private val config: ChatNotifierConfig,
     originalRules: List<NotificationRule>? = null,
-    draftRules: List<NotificationRule>? = null
+    draftRules: List<NotificationRule>? = null,
+    initialScrollOffset: Int = 0
 ) : Screen(Component.literal("Chat Notifier")) {
     private val fields = mutableListOf<RuleFields>()
     private val originalRules = (originalRules ?: config.rules).map { it.copy() }
     private val workingRules = (draftRules ?: config.rules).map { it.copy() }.toMutableList()
-    private var scrollOffset = 0
+    private var scrollOffset = initialScrollOffset
 
     override fun init() {
         val center = width / 2
@@ -73,7 +74,7 @@ class ChatNotifierScreen(
                     NotificationDefaults.displayText,
                     NotificationDefaults.cooldownSeconds
                 )
-                reopen(draftRules)
+                reopen(draftRules, maxScroll(draftRules.size))
             }
         }.bounds(center - BUTTON_OFFSET, height - BUTTONS_BOTTOM, BUTTON_WIDTH, 20).build()
         addRenderableWidget(addButton)
@@ -96,9 +97,19 @@ class ChatNotifierScreen(
     private fun ruleY(index: Int): Int =
         FIRST_RULE_Y + index * RULE_HEIGHT - scrollOffset
 
+    private fun maxScroll(ruleCount: Int): Int =
+        (FIRST_RULE_Y + (ruleCount - 1) * RULE_HEIGHT + RULE_BOTTOM - contentBottom).coerceAtLeast(0)
+
+    private fun scrollRuleIntoView(index: Int) {
+        val top = FIRST_RULE_Y + index * RULE_HEIGHT
+        scrollOffset = scrollOffset
+            .coerceAtMost(top - CONTENT_TOP)
+            .coerceAtLeast(top + RULE_BOTTOM - contentBottom)
+        updateScroll()
+    }
+
     private fun updateScroll() {
-        val maxScroll = ((workingRules.size - 1) * RULE_HEIGHT + RULE_BOTTOM - contentBottom).coerceAtLeast(0)
-        scrollOffset = scrollOffset.coerceIn(0, maxScroll)
+        scrollOffset = scrollOffset.coerceIn(0, maxScroll(workingRules.size))
         fields.forEachIndexed { index, input ->
             val y = ruleY(index)
             input.trigger.y = y + TRIGGER_INPUT_OFFSET
@@ -137,17 +148,17 @@ class ChatNotifierScreen(
             val input = fields[index]
             val trigger = draft.triggerRegex.trim()
             if (trigger.isBlank()) {
-                input.trigger.setSuggestion("Enter a trigger")
+                reportInvalid(index, input.trigger, "Enter a trigger")
                 return
             }
             val cooldown = input.cooldown.value.toLongOrNull()
             if (cooldown == null || cooldown < 0) {
-                input.cooldown.setSuggestion("Enter a number")
+                reportInvalid(index, input.cooldown, "Enter a number")
                 return
             }
             val updatedRule = draft.copy()
             if (!updatedRule.updateTriggerRegex(trigger)) {
-                input.trigger.setSuggestion("Invalid regular expression")
+                reportInvalid(index, input.trigger, "Invalid regular expression")
                 return
             }
             updatedRule.displayText = draft.displayText.trim()
@@ -170,13 +181,23 @@ class ChatNotifierScreen(
         }
     }
 
+    private fun reportInvalid(index: Int, field: EditBox, hint: String) {
+        scrollRuleIntoView(index)
+        field.setSuggestion(hint)
+        this.focused = field
+        minecraft.gui.hud.setOverlayMessage(
+            Component.literal("Chat Notifier: rule ${index + 1}: ${hint.lowercase()}"),
+            false
+        )
+    }
+
     override fun onClose() {
         restoreOriginalRules()
         minecraft.gui.setScreen(parent)
     }
 
-    private fun reopen(draftRules: List<NotificationRule>) {
-        minecraft.gui.setScreen(ChatNotifierScreen(parent, config, originalRules, draftRules))
+    private fun reopen(draftRules: List<NotificationRule>, scrollTo: Int = scrollOffset) {
+        minecraft.gui.setScreen(ChatNotifierScreen(parent, config, originalRules, draftRules, scrollTo))
     }
 
     private fun syncFieldsToWorkingRules() {
@@ -211,7 +232,7 @@ class ChatNotifierScreen(
             val trackHeight = contentBottom - CONTENT_TOP
             val contentHeight = workingRules.size * RULE_HEIGHT
             val thumbHeight = (trackHeight * trackHeight / contentHeight).coerceAtLeast(SCROLLBAR_MIN_THUMB)
-            val maxScroll = (contentHeight - trackHeight).coerceAtLeast(1)
+            val maxScroll = maxScroll(workingRules.size).coerceAtLeast(1)
             val thumbY = CONTENT_TOP + (trackHeight - thumbHeight) * scrollOffset / maxScroll
             graphics.fill(trackX, CONTENT_TOP, trackX + SCROLLBAR_WIDTH, contentBottom, 0x66000000)
             graphics.fill(trackX, thumbY, trackX + SCROLLBAR_WIDTH, thumbY + thumbHeight, 0xFFFFFFFF.toInt())
